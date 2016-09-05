@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="sfdc-builder" basedir="." xmlns:sf="antlib:com.salesforce" xmlns:ff="antlib:com.spaceheroes" xmlns:ac="antlib:net.sf.antcontrib">
+
+	<!-- Classpath 
+	====================================== -->
+	<path id="ant.additions.classpath">
+		<fileset dir="lib" includes="*.jar"/>
+	</path>
+	<taskdef resource="com/spaceheroes/task/antlib.xml" uri="antlib:com.spaceheroes" classpathref="ant.additions.classpath" />
+	<taskdef resource="com/salesforce/antlib.xml" uri="antlib:com.salesforce" classpathref="ant.additions.classpath" />	
+	<taskdef resource="net/sf/antcontrib/antlib.xml" uri="antlib:net.sf.antcontrib" classpathref="ant.additions.classpath" />
+
+
+	<!-- Build properties
+	====================================== -->
+	<property environment="env" />
+	<property name="path" value="../" />	
+	<property name="source" value="${path}/src"/>
+	<property name="buildFilename" value="projectsrc.zip"/>
+	<property name="buildFilePath" value="${path}/build/${buildFilename}"/>
+
+
+	<!-- Salesforce constants
+	====================================== -->
+	<property name="sf.maxPoll" value="50000" />	
+	<property name="sf.maxWaitMillis" value="50000" />	
+	<property name="sf.packageContent"
+		value="applications/*.*, assignmentRules/*.*, classes/*.*, customApplicationComponents/*.*, customPermissions/*.*, staticresources/*.*, dashboards/*.*, dashboards/**/*.*, documents/**/*.*, flows/*.*, email/**/*.*, labels/*.*, objects/*.*, layouts/*.*, workflows/*.*, pages/*.*, components/*.*, tabs/*.*, homePageComponents/*.*, homePageLayouts/*.*, letterhead/*.*, queues/*.*, permissionsets/*.*, remoteSiteSettings/*.*, reports/*.*, reports/**/*.*, reportTypes/*.*, sites/*.*, tabs/*.*, triggers/*.*, weblinks/*.*, profiles/*.*, skills/*.*, liveChatAgentConfigs/*.*, liveChatButtons/*.*, liveChatDeployments/*.*, staticresources/*.*, translations/*.*, objectTranslations/*.*, settings/*.*, roles/*.*, matchingRules/*.*, sharingRules/*.*, groups/*.*, quickActions/*.*, package.xml, destructiveChangesPre.xml, destructiveChangesPost.xml" />	
+
+	<!-- Creates the artifacts to be used by the Bamboo deployments
+	====================================== -->
+	<target name="build">
+		<echo>Packaging...</echo>
+		<zip destfile="${buildFilename}" basedir="${source}/src" includes="${sf.packageContent}" />
+	</target>
+
+
+
+	<!-- ====================================== --> 
+	<target name="package-and-deploy" depends="build">
+		<!-- <ff:clearschedule username="${env.bamboo_username}" password="${env.bamboo_password}${env.bamboo_securitytoken}" serverurl="${env.bamboo_serverurl}" /> -->
+		<echo>Deploying to Salesforce...</echo>
+		<sf:deploy username="${env.bamboo_username}" password="${env.bamboo_password}${env.bamboo_securitytoken}" serverurl="${env.bamboo_serverurl}" maxPoll="${sf.maxPoll}" pollWaitMillis="${sf.maxWaitMillis}" zipFile="${buildFilename}" checkOnly="${env.bamboo_checkOnly}" ignoreWarnings="true" rollbackOnError="true" testLevel="${env.bamboo_testLevel}"/>
+		<!-- <antcall target="run-tests" /> -->
+	</target>
+
+
+	<!-- Uses exisitng artifacta and deploys -->
+	<target name="retrieve-artifact-and-deploy">
+		<!-- <ff:clearschedule username="${env.bamboo_username}" password="${env.bamboo_password}${env.bamboo_securitytoken}" serverurl="${env.bamboo_serverurl}" /> -->
+		<echo>Retrieving artifact and deploying</echo>
+		<sf:deploy username="${env.bamboo_username}" password="${env.bamboo_password}${env.bamboo_securitytoken}" serverurl="${env.bamboo_serverurl}" maxPoll="${sf.maxPoll}" pollWaitMillis="${sf.maxWaitMillis}" zipFile="${buildFilename}" checkOnly="${env.bamboo_checkOnly}" ignoreWarnings="true" rollbackOnError="true" testLevel="${env.bamboo_testLevel}"/>
+		<!-- <antcall target="run-tests" /> -->
+	</target>
+
+
+	<!-- Unzips, patches and deploys an artifact This is used in all the deployments
+	Bamboo -> Deploy -> All Deployment Projects
+	====================================== -->
+	<target name="patch-and-deploy">
+		<echo>Unzipping artifact...</echo>
+		<mkdir dir="tmp"/>
+		<unzip src="../src/${buildFilename}" dest="tmp"/>
+
+		<echo>Patching artifact...</echo>
+		<ac:for list="${env.bamboo_replace}" delimiter="," param = "pair">
+	        <sequential>
+                    <ac:propertyregex property="replace.key"
+                           input="@{pair}"
+                           regexp="(.*)\="
+                           select="\1"
+                           override="true" />
+                    <ac:propertyregex property="replace.value"
+                           input="@{pair}"
+                           regexp="\=(.*)"
+                           select="\1"
+                           override="true" />
+                    <replace dir="tmp" token="${replace.key}" value="${replace.value}">
+	                      <include name="**/*.object"/>
+	                      <include name="**/*.workflow"/>
+	                      <include name="**/*.remoteSite"/>
+                    </replace>
+            </sequential>
+    	</ac:for>
+
+
+		<!-- <echo>Clearing Apex Jobs...</echo> -->
+		<!-- <ff:clearschedule username="${env.bamboo_username}" password="${env.bamboo_password}${env.bamboo_securitytoken}" serverurl="${env.bamboo_serverurl}" ignoreErrors="true"/> 	 -->
+
+		<echo>Deploying artifact...</echo>
+    	<sf:deploy username="${env.bamboo_username}" password="${env.bamboo_password}${env.bamboo_securitytoken}" serverurl="${env.bamboo_serverurl}" maxPoll="${sf.maxPoll}" pollWaitMillis="${sf.maxWaitMillis}" deployRoot="tmp" checkOnly="${env.bamboo_checkOnly}" testLevel="${env.bamboo_testLevel}" ignoreWarnings="true" rollbackOnError="true"/>
+	</target>
+
+
+</project>
